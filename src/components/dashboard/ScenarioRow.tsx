@@ -41,7 +41,7 @@ export function ScenarioRow({ scenario, featureName, onSelect }: Props) {
           disabled={status === "running"}
           onClick={(e) => {
             e.stopPropagation();
-            void run(scenario, background);
+            void run(scenario, featureName);
           }}
           className="h-7 gap-1 px-2"
         >

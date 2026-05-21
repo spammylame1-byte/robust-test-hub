@@ -53,7 +53,7 @@ export function ScenarioDetailPanel({ feature, scenario, open, onOpenChange }: P
               </div>
               <div className="pt-2">
                 <Button
-                  onClick={() => void run(scenario, feature.background.steps)}
+                  onClick={() => void run(scenario, feature.name)}
                   disabled={status === "running"}
                   className="gap-2"
                 >
