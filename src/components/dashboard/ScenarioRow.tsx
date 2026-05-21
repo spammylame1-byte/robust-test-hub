@@ -7,11 +7,11 @@ import { Play, ChevronRight, Loader2 } from "lucide-react";
 
 interface Props {
   scenario: Scenario;
-  background: string[];
+  featureName: string;
   onSelect: () => void;
 }
 
-export function ScenarioRow({ scenario, background, onSelect }: Props) {
+export function ScenarioRow({ scenario, featureName, onSelect }: Props) {
   const id = scenarioId(scenario);
   const result = useRunsStore((s) => s.results[id]);
   const run = useRunsStore((s) => s.run);
@@ -41,7 +41,7 @@ export function ScenarioRow({ scenario, background, onSelect }: Props) {
           disabled={status === "running"}
           onClick={(e) => {
             e.stopPropagation();
-            void run(scenario, background);
+            void run(scenario, featureName);
           }}
           className="h-7 gap-1 px-2"
         >

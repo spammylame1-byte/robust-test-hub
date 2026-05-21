@@ -1,8 +1,11 @@
 import { createFileRoute, useNavigate, useSearch } from "@tanstack/react-router";
 import { useMemo } from "react";
-import featuresData from "@/data/features.json";
+import { queryOptions, useSuspenseQuery, useQueryErrorResetBoundary } from "@tanstack/react-query";
+import { useEffect } from "react";
+import { useRouter } from "@tanstack/react-router";
 import type { Feature } from "@/types/cucumber";
 import { scenarioId } from "@/types/cucumber";
+import { fetchFeatures } from "@/lib/api";
 import { SummaryStats } from "@/components/dashboard/SummaryStats";
 import { FeatureCard } from "@/components/dashboard/FeatureCard";
 import { ScenarioDetailPanel } from "@/components/dashboard/ScenarioDetailPanel";
@@ -10,6 +13,11 @@ import { ScenarioDetailPanel } from "@/components/dashboard/ScenarioDetailPanel"
 interface SearchParams {
   scenario?: string;
 }
+
+const featuresQueryOptions = queryOptions({
+  queryKey: ["features"],
+  queryFn: () => fetchFeatures(),
+});
 
 export const Route = createFileRoute("/")({
   head: () => ({
@@ -21,23 +29,58 @@ export const Route = createFileRoute("/")({
   validateSearch: (s: Record<string, unknown>): SearchParams => ({
     scenario: typeof s.scenario === "string" ? s.scenario : undefined,
   }),
+  loader: ({ context }) => context.queryClient.ensureQueryData(featuresQueryOptions),
+  pendingComponent: () => (
+    <div className="flex min-h-screen items-center justify-center bg-background">
+      <p className="font-mono text-xs uppercase tracking-widest text-muted-foreground">
+        Loading features…
+      </p>
+    </div>
+  ),
+  errorComponent: ErrorView,
   component: Dashboard,
 });
 
-const features = featuresData as Feature[];
+function ErrorView({ error, reset }: { error: Error; reset: () => void }) {
+  const router = useRouter();
+  const queryErrorReset = useQueryErrorResetBoundary();
+  useEffect(() => {
+    queryErrorReset.reset();
+  }, [queryErrorReset]);
+  return (
+    <div className="flex min-h-screen items-center justify-center bg-background px-4">
+      <div className="max-w-md space-y-3 rounded-md border border-status-fail/50 bg-status-fail/10 p-5 text-center">
+        <h2 className="font-mono text-xs uppercase tracking-widest text-status-fail">
+          Failed to load features
+        </h2>
+        <p className="font-mono text-xs text-foreground">{error.message}</p>
+        <button
+          onClick={() => {
+            reset();
+            void router.invalidate();
+          }}
+          className="rounded-sm bg-primary px-3 py-1.5 text-xs font-medium text-primary-foreground hover:bg-primary/90"
+        >
+          Retry
+        </button>
+      </div>
+    </div>
+  );
+}
 
 function Dashboard() {
+  const { data: features } = useSuspenseQuery(featuresQueryOptions);
   const { scenario: selectedId } = useSearch({ from: "/" });
   const navigate = useNavigate({ from: "/" });
 
   const selected = useMemo(() => {
     if (!selectedId) return null;
-    for (const f of features) {
+    for (const f of features as Feature[]) {
       const s = f.scenarios.find((sc) => scenarioId(sc) === selectedId);
       if (s) return { feature: f, scenario: s };
     }
     return null;
-  }, [selectedId]);
+  }, [selectedId, features]);
 
   const setSelected = (id: string | undefined) => {
     void navigate({ search: { scenario: id } as SearchParams });

@@ -77,7 +77,7 @@ export function FeatureCard({ feature, onSelectScenario, defaultOpen }: Props) {
             <ScenarioRow
               key={scenarioId(s)}
               scenario={s}
-              background={feature.background.steps}
+              featureName={feature.name}
               onSelect={() => onSelectScenario(scenarioId(s))}
             />
           ))}

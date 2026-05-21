@@ -1,67 +1,56 @@
-# Cucumber Test Dashboard — Plan
+# Rewire frontend to a separate Express backend
 
-A practical, sturdy, blue-leaning dashboard that groups parsed Cucumber `.feature` data by feature, drills into scenarios, and exposes a mock "Run Test" action ready to be wired to a real backend later.
+Goal: replace the two mock touchpoints (`src/data/features.json` static import and `src/lib/mock-run.ts`) with HTTP calls to your Express server. Everything else (components, store shape, URL state, types) stays as-is.
 
-## Visual direction
+## Backend contract you'll implement
 
-- Bluish, utilitarian, slightly industrial — think internal tooling (Jenkins/Grafana-adjacent), not marketing site.
-- Tight spacing, clear borders, monospaced text for steps and tags, minimal motion.
-- Tokens added to `src/styles.css`:
-  - `--background` near-white with faint blue tint, `--foreground` deep slate-blue
-  - `--primary` strong navy/steel blue, `--accent` lighter steel blue
-  - Semantic status tokens: `--status-pass`, `--status-fail`, `--status-pending`, `--status-running` (plus `*-foreground`) and matching `--color-*` registrations under `@theme inline`
-  - Slightly reduced `--radius` (~0.375rem) for a more "engineered" feel
-- Mono font for steps/tags via Tailwind's `font-mono`.
+Just so the frontend has a target — your Express app needs two endpoints:
 
-## Data layer
+- `GET /features` → returns the array currently in `feature-summary.json` (same shape as `src/data/features.json`, i.e. `Feature[]`).
+- `POST /run` with body `{ scenarioId, featureName, scenarioName }` → spawns cucumber for that one scenario, reads `cucumber-report.json`, returns:
+  ```
+  { status: "pass" | "fail", durationMs: number, output: string, error?: string }
+  ```
 
-- `src/data/features.json` — the example payload the user pasted, ready to swap for an API.
-- `src/types/cucumber.ts` — `Feature`, `Scenario`, `Step`, `RunStatus = 'idle' | 'running' | 'pass' | 'fail'`, `RunResult { status, durationMs, output, error?, ranAt }`.
-- `src/store/runs.ts` — small Zustand store keyed by scenario tag/id holding `RunResult`. Survives navigation; no persistence needed v1.
-- `src/lib/mock-run.ts` — `runScenario(scenario)` returns a Promise that resolves after 600–1800 ms random latency, ~75% pass / 25% fail, generates a plausible stdout block and (on fail) an error message referencing one of the scenario's steps.
+Enable CORS for the dashboard origin (`cors()` middleware, allow `Content-Type`).
 
-## Routes & layout
+## Frontend changes
 
-Single dashboard route with a master-detail side panel — no per-scenario route.
+### 1. Add an API base URL env var
+- Create `.env` with `VITE_API_BASE_URL=http://localhost:3001` (whatever port Express uses).
+- Read it via `import.meta.env.VITE_API_BASE_URL` (no server-side secrets needed — this is a public URL).
 
-- `src/routes/__root.tsx` — keep shell; add header (app title, summary stats inline on the right).
-- `src/routes/index.tsx` — the dashboard. Two-pane layout:
-  - Left/main: feature list (accordion of feature cards). Each feature card shows name, tag chips, scenario count, mini pass/fail bar. Expanding reveals its scenario rows.
-  - Right: `Sheet` (shadcn) side panel that opens when a scenario is selected, showing full detail.
-- Selection state lives in URL search params (`?scenario=<testId>`) so deep links and back-button work without separate routes.
+### 2. New file: `src/lib/api.ts`
+Thin fetch wrapper with two functions:
+- `fetchFeatures(): Promise<Feature[]>` → `GET ${BASE}/features`
+- `runScenario(payload): Promise<RunResult>` → `POST ${BASE}/run`, maps response to `RunResult` (just spreads + adds `ranAt: Date.now()`).
 
-## Components
+Throws on non-2xx so callers can surface errors.
 
-- `components/dashboard/SummaryStats.tsx` — top strip: total features, total scenarios, runs executed, pass rate, fail count. Pulls counts from data + runs store.
-- `components/dashboard/FeatureCard.tsx` — collapsible card (uses `Accordion` or `Collapsible`); header shows name, tags, scenario count, pass/fail mini-bar.
-- `components/dashboard/ScenarioRow.tsx` — row inside a feature: scenario name, TestID tag, status pill, `Run Test` button, `Details` button. Run button shows spinner while running and updates the pill on completion.
-- `components/dashboard/ScenarioDetailPanel.tsx` — the `Sheet` content: scenario name, tags, background steps (from parent feature) + scenario steps in a mono block, last run status, duration, stdout output, error message if failed, and a `Run Test` button that mirrors the row action.
-- `components/dashboard/StatusPill.tsx` — small badge styled with the status tokens.
+### 3. Rewrite `src/store/runs.ts`
+Replace the `runScenarioMock` import with `runScenario` from `@/lib/api`. Signature of `run(scenario, background)` stays identical — components don't change. On thrown errors, set status to `"fail"` with the error message in `error`.
 
-## Run flow (mock)
+### 4. Update `src/routes/index.tsx` to fetch the catalog
+Swap the static `featuresData` import for TanStack Query:
+- Define `featuresQueryOptions` using `fetchFeatures`.
+- Loader: `context.queryClient.ensureQueryData(featuresQueryOptions)`.
+- Component: `const { data: features } = useSuspenseQuery(featuresQueryOptions)`.
+- Add `errorComponent` and `pendingComponent` (small loading + error states) since the loader can now fail.
 
-1. User clicks `Run Test` on a row or in the detail panel.
-2. Store sets that scenario's status to `running`.
-3. `mock-run.ts` resolves with a result; store updates to `pass`/`fail` with output/error.
-4. UI re-renders pill, mini-bar in feature card, and summary stats automatically.
-5. `runScenario` is isolated so swapping it for a real `createServerFn` call later is a one-file change.
+### 5. Delete `src/data/features.json` and `src/lib/mock-run.ts`
+Once the two changes above land, both are dead code.
 
-## File changes
+## What does NOT change
 
-New:
-- `src/data/features.json`
-- `src/types/cucumber.ts`
-- `src/lib/mock-run.ts`
-- `src/store/runs.ts`
-- `src/components/dashboard/` (5 files above)
+- `src/types/cucumber.ts` (`Feature`, `Scenario`, `RunResult`, `scenarioId`) — your backend response matches these.
+- All dashboard components (`FeatureCard`, `ScenarioRow`, `ScenarioDetailPanel`, `SummaryStats`, `StatusPill`).
+- URL search-param state for `?scenario=…`.
+- Zustand store shape (`results: Record<string, RunResult>`).
 
-Edited:
-- `src/styles.css` — add blue palette + status tokens, register under `@theme inline`.
-- `src/routes/__root.tsx` — header with app title; update `<title>`/meta to "Cucumber Test Dashboard".
-- `src/routes/index.tsx` — replace placeholder with the dashboard.
+## One thing to confirm
 
-Dependency: `zustand` (via `bun add`).
+Right now `scenarioId()` prefers the `@TestID_N` tag, falling back to scenario name. For your Express `/run` endpoint to locate the right scenario, easiest is to send both `featureName` and `scenarioName` in the POST body (backend looks them up). If you'd rather key purely by `@TestID_N`, say so and I'll have the backend index by that instead.
 
-## Out of scope for v1
+## Local dev note
 
-Real backend wiring, bulk run, search/filter, dark mode, persistence, auth — all easy to add on top of this structure later.
+Express on `:3001`, Vite dev on `:5173` → CORS will trip without the `cors` middleware on the backend. No Vite proxy needed if CORS is set; if you'd rather avoid CORS entirely, we can configure `server.proxy` in `vite.config.ts` to forward `/api/*` to Express instead — let me know which you prefer.
