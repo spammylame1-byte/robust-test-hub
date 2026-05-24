@@ -3,7 +3,7 @@ export interface Scenario {
   type: string;
   tags: string[];
   steps: string[];
-  examples: unknown[];
+  examples: Array<Record<string, unknown>>;
 }
 
 export interface Background {
