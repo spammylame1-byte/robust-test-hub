@@ -3,7 +3,12 @@ export interface Scenario {
   type: string;
   tags: string[];
   steps: string[];
-  examples: Array<Record<string, unknown>>;
+  examples: unknown[];
+}
+
+// Helper escape for serializer — declared above usage.
+type _x = never;
+export interface __unused { _: _x }
 }
 
 export interface Background {
