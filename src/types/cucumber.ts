@@ -1,9 +1,17 @@
+type JsonValue =
+  | string
+  | number
+  | boolean
+  | null
+  | JsonValue[]
+  | { [k: string]: JsonValue };
+
 export interface Scenario {
   name: string;
   type: string;
   tags: string[];
   steps: string[];
-  examples: unknown[];
+  examples: JsonValue[];
 }
 
 export interface Background {
