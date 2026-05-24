@@ -1,14 +1,17 @@
+type JsonValue =
+  | string
+  | number
+  | boolean
+  | null
+  | JsonValue[]
+  | { [k: string]: JsonValue };
+
 export interface Scenario {
   name: string;
   type: string;
   tags: string[];
   steps: string[];
-  examples: unknown[];
-}
-
-// Helper escape for serializer — declared above usage.
-type _x = never;
-export interface __unused { _: _x }
+  examples: JsonValue[];
 }
 
 export interface Background {
