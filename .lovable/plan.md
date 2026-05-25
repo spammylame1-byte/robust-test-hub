@@ -1,56 +1,48 @@
-# Rewire frontend to a separate Express backend
+## Goal
 
-Goal: replace the two mock touchpoints (`src/data/features.json` static import and `src/lib/mock-run.ts`) with HTTP calls to your Express server. Everything else (components, store shape, URL state, types) stays as-is.
+Run the app on the Node runtime in dev (and for deploy), so `spawn()` in `runScenarioFn` actually works. Drop Cloudflare Workers as the target.
 
-## Backend contract you'll implement
+## Changes
 
-Just so the frontend has a target — your Express app needs two endpoints:
+### 1. `vite.config.ts` — remove Cloudflare plugin entirely
+- Delete the `import { cloudflare } from "@cloudflare/vite-plugin"`.
+- Delete the `if (command === "build") plugins.push(cloudflare(...))` branch.
+- Pass `customViteReactPlugin: true` to `tanstackStart({...})` so it doesn't inject a second `@vitejs/plugin-react` (this is what's causing the `tanstack-start-injected-head-scripts:v` virtual-module resolution failure in dev).
+- Final plugin order: `tailwindcss → tsConfigPaths → tanstackStart({ customViteReactPlugin: true, ... }) → react`.
 
-- `GET /features` → returns the array currently in `feature-summary.json` (same shape as `src/data/features.json`, i.e. `Feature[]`).
-- `POST /run` with body `{ scenarioId, featureName, scenarioName }` → spawns cucumber for that one scenario, reads `cucumber-report.json`, returns:
-  ```
-  { status: "pass" | "fail", durationMs: number, output: string, error?: string }
-  ```
+With no Cloudflare plugin registered, the SSR environment falls back to Vite's default Node-based dev runner, which is what we want.
 
-Enable CORS for the dashboard origin (`cors()` middleware, allow `Content-Type`).
+### 2. `src/server.ts` — keep, but it's now a Node handler
+The current shape (`export default { fetch }`) is the Workers convention. For a Node server we need a Node entry. Two options:
 
-## Frontend changes
+- **(a) Drop the custom wrapper** and let TanStack Start's built-in Node server entry handle it. Simplest. We lose the catastrophic-500 normalizer, but Node prints uncaught errors to stdout natively, so logs aren't swallowed the way they were on Workers.
+- **(b) Keep the wrapper** but rewrite it as a Node `http.createServer` that calls into `@tanstack/react-start/server-entry`'s fetch adapter (`createRequestHandler` from `@tanstack/react-start/server`).
 
-### 1. Add an API base URL env var
-- Create `.env` with `VITE_API_BASE_URL=http://localhost:3001` (whatever port Express uses).
-- Read it via `import.meta.env.VITE_API_BASE_URL` (no server-side secrets needed — this is a public URL).
+I recommend **(a)** — the wrapper existed to work around h3's Workers swallowing behavior; on Node, default behavior is fine. We delete `src/server.ts`, `src/lib/error-capture.ts`, and `src/lib/error-page.ts`, and remove the `server: { entry: "server" }` override from `tanstackStart()`.
 
-### 2. New file: `src/lib/api.ts`
-Thin fetch wrapper with two functions:
-- `fetchFeatures(): Promise<Feature[]>` → `GET ${BASE}/features`
-- `runScenario(payload): Promise<RunResult>` → `POST ${BASE}/run`, maps response to `RunResult` (just spreads + adds `ranAt: Date.now()`).
+### 3. `wrangler.jsonc` — delete
+Not needed without Workers.
 
-Throws on non-2xx so callers can surface errors.
+### 4. `package.json`
+- Remove `@cloudflare/vite-plugin` and `wrangler` from `devDependencies` (if present).
+- Confirm `dev`/`start` scripts target Node. TanStack Start v1's default dev script is `vite dev` (Node runtime). For production, add `"start": "node .output/server/index.mjs"` or similar — TanStack Start emits a Node bundle by default when no Workers preset is configured.
 
-### 3. Rewrite `src/store/runs.ts`
-Replace the `runScenarioMock` import with `runScenario` from `@/lib/api`. Signature of `run(scenario, background)` stays identical — components don't change. On thrown errors, set status to `"fail"` with the error message in `error`.
+### 5. `.env` — no change
+`FEATURES_JSON_PATH` and `CUCUMBER_CWD` keep working; `process.env` is real Node now.
 
-### 4. Update `src/routes/index.tsx` to fetch the catalog
-Swap the static `featuresData` import for TanStack Query:
-- Define `featuresQueryOptions` using `fetchFeatures`.
-- Loader: `context.queryClient.ensureQueryData(featuresQueryOptions)`.
-- Component: `const { data: features } = useSuspenseQuery(featuresQueryOptions)`.
-- Add `errorComponent` and `pendingComponent` (small loading + error states) since the loader can now fail.
+### 6. `src/lib/features.functions.ts` — graceful empty-state on `ENOENT`
+Wrap `readFile` in try/catch; on `ENOENT`, return `{ features: [], error: "feature-summary.json not found at <path>" }`. Update return type accordingly.
 
-### 5. Delete `src/data/features.json` and `src/lib/mock-run.ts`
-Once the two changes above land, both are dead code.
+### 7. `src/routes/index.tsx` — surface empty-state
+If features query returns `{ features: [], error }`, render a small panel telling the user to point `FEATURES_JSON_PATH` at their parsed file. (Optional polish — say the word if you want to skip and just throw instead.)
 
-## What does NOT change
+## What I will NOT touch
 
-- `src/types/cucumber.ts` (`Feature`, `Scenario`, `RunResult`, `scenarioId`) — your backend response matches these.
-- All dashboard components (`FeatureCard`, `ScenarioRow`, `ScenarioDetailPanel`, `SummaryStats`, `StatusPill`).
-- URL search-param state for `?scenario=…`.
-- Zustand store shape (`results: Record<string, RunResult>`).
+- `@tanstack/*` versions
+- `src/start.ts`, `src/router.tsx`, `__root.tsx`
+- Any dashboard component, store, or types
+- `src/lib/run.functions.ts` (it'll just work once we're on Node)
 
-## One thing to confirm
+## Open question
 
-Right now `scenarioId()` prefers the `@TestID_N` tag, falling back to scenario name. For your Express `/run` endpoint to locate the right scenario, easiest is to send both `featureName` and `scenarioName` in the POST body (backend looks them up). If you'd rather key purely by `@TestID_N`, say so and I'll have the backend index by that instead.
-
-## Local dev note
-
-Express on `:3001`, Vite dev on `:5173` → CORS will trip without the `cors` middleware on the backend. No Vite proxy needed if CORS is set; if you'd rather avoid CORS entirely, we can configure `server.proxy` in `vite.config.ts` to forward `/api/*` to Express instead — let me know which you prefer.
+For production deploy later: are you planning to (a) run `node` on the same Windows machine where the cucumber project lives, or (b) deploy the dashboard somewhere else and have it shell out via SSH / call a small agent on the cucumber box? Doesn't affect dev — just want to know before we wire deploy scripts.
