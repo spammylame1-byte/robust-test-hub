@@ -69,13 +69,15 @@ function ErrorView({ error, reset }: { error: Error; reset: () => void }) {
 }
 
 function Dashboard() {
-  const { data: features } = useSuspenseQuery(featuresQueryOptions);
+  const { data } = useSuspenseQuery(featuresQueryOptions);
+  const features = data.features;
+  const loadError = data.error;
   const { scenario: selectedId } = useSearch({ from: "/" });
   const navigate = useNavigate({ from: "/" });
 
   const selected = useMemo(() => {
     if (!selectedId) return null;
-    for (const f of features as Feature[]) {
+    for (const f of features) {
       const s = f.scenarios.find((sc) => scenarioId(sc) === selectedId);
       if (s) return { feature: f, scenario: s };
     }
@@ -105,25 +107,35 @@ function Dashboard() {
       </header>
 
       <main className="mx-auto max-w-7xl space-y-6 px-6 py-6">
-        <SummaryStats features={features} />
-
-        <div>
-          <div className="mb-3 flex items-baseline justify-between">
-            <h2 className="font-mono text-[11px] uppercase tracking-widest text-muted-foreground">
-              Features ({features.length})
+        {loadError ? (
+          <div className="rounded-md border border-status-fail/50 bg-status-fail/10 p-5">
+            <h2 className="font-mono text-xs uppercase tracking-widest text-status-fail">
+              No features loaded
             </h2>
+            <p className="mt-2 font-mono text-xs text-foreground">{loadError}</p>
           </div>
-          <div className="space-y-2">
-            {features.map((f, i) => (
-              <FeatureCard
-                key={f.name}
-                feature={f}
-                defaultOpen={i === 0}
-                onSelectScenario={setSelected}
-              />
-            ))}
-          </div>
-        </div>
+        ) : (
+          <>
+            <SummaryStats features={features as Feature[]} />
+            <div>
+              <div className="mb-3 flex items-baseline justify-between">
+                <h2 className="font-mono text-[11px] uppercase tracking-widest text-muted-foreground">
+                  Features ({features.length})
+                </h2>
+              </div>
+              <div className="space-y-2">
+                {features.map((f, i) => (
+                  <FeatureCard
+                    key={f.name}
+                    feature={f}
+                    defaultOpen={i === 0}
+                    onSelectScenario={setSelected}
+                  />
+                ))}
+              </div>
+            </div>
+          </>
+        )}
       </main>
 
       <ScenarioDetailPanel
