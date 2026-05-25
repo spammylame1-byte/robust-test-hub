@@ -3,33 +3,12 @@ import tailwindcss from "@tailwindcss/vite";
 import tsConfigPaths from "vite-tsconfig-paths";
 import { tanstackStart } from "@tanstack/react-start/plugin/vite";
 import react from "@vitejs/plugin-react";
-import { cloudflare } from "@cloudflare/vite-plugin";
 
-export default defineConfig(async ({ command, mode }) => {
+export default defineConfig(async ({ mode }) => {
   const envDefine: Record<string, string> = {};
   const loadedEnv = loadEnv(mode, process.cwd(), "VITE_");
   for (const [key, value] of Object.entries(loadedEnv)) {
     envDefine[`import.meta.env.${key}`] = JSON.stringify(value);
-  }
-
-  const plugins = [
-    tailwindcss(),
-    tsConfigPaths({ projects: ["./tsconfig.json"] }),
-    tanstackStart({
-      server: { entry: "server" },
-      importProtection: {
-        behavior: "error",
-        client: {
-          files: ["**/server/**"],
-          specifiers: ["server-only"],
-        },
-      },
-    }),
-    react(),
-  ];
-
-  if (command === "build") {
-    plugins.push(cloudflare({ viteEnvironment: { name: "ssr" } }));
   }
 
   return {
@@ -47,6 +26,11 @@ export default defineConfig(async ({ command, mode }) => {
         "@tanstack/query-core",
       ],
     },
-    plugins,
+    plugins: [
+      tailwindcss(),
+      tsConfigPaths({ projects: ["./tsconfig.json"] }),
+      tanstackStart({ customViteReactPlugin: true }),
+      react(),
+    ],
   };
 });
