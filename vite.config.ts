@@ -29,7 +29,7 @@ export default defineConfig(async ({ mode }) => {
     plugins: [
       tailwindcss(),
       tsConfigPaths({ projects: ["./tsconfig.json"] }),
-      tanstackStart({ customViteReactPlugin: true }),
+      tanstackStart(),
       react(),
     ],
   };
