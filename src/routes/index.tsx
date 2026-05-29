@@ -1,11 +1,15 @@
 import { createFileRoute, useNavigate, useSearch } from "@tanstack/react-router";
-import { useMemo } from "react";
-import { queryOptions, useSuspenseQuery, useQueryErrorResetBoundary } from "@tanstack/react-query";
+import { useMemo, useState } from "react";
+import { queryOptions, useSuspenseQuery, useQueryErrorResetBoundary, useQueryClient } from "@tanstack/react-query";
 import { useEffect } from "react";
 import { useRouter } from "@tanstack/react-router";
+import { useServerFn } from "@tanstack/react-start";
+import { RefreshCw } from "lucide-react";
 import type { Feature } from "@/types/cucumber";
 import { scenarioId } from "@/types/cucumber";
 import { fetchFeatures } from "@/lib/api";
+import { reloadFeaturesFn } from "@/lib/features.functions";
+import { Button } from "@/components/ui/button";
 import { SummaryStats } from "@/components/dashboard/SummaryStats";
 import { FeatureCard } from "@/components/dashboard/FeatureCard";
 import { ScenarioDetailPanel } from "@/components/dashboard/ScenarioDetailPanel";
@@ -86,6 +90,30 @@ function Dashboard() {
     void navigate({ search: { scenario: id } as SearchParams });
   };
 
+  const reload = useServerFn(reloadFeaturesFn);
+  const queryClient = useQueryClient();
+  const [reloading, setReloading] = useState(false);
+  const [reloadMsg, setReloadMsg] = useState<{ kind: "ok" | "err"; text: string } | null>(null);
+
+  const handleReload = async () => {
+    setReloading(true);
+    setReloadMsg(null);
+    try {
+      const res = await reload();
+      if (res.ok) {
+        await queryClient.invalidateQueries({ queryKey: ["features"] });
+        setReloadMsg({ kind: "ok", text: `Reloaded · ${res.count} features` });
+      } else {
+        setReloadMsg({ kind: "err", text: res.error });
+      }
+    } catch (e) {
+      setReloadMsg({ kind: "err", text: (e as Error).message });
+    } finally {
+      setReloading(false);
+      setTimeout(() => setReloadMsg(null), 4000);
+    }
+  };
+
   return (
     <div className="min-h-screen bg-background">
       <header className="border-b border-border bg-card">
@@ -101,8 +129,30 @@ function Dashboard() {
               </p>
             </div>
           </div>
+          <div className="flex items-center gap-3">
+            {reloadMsg && (
+              <span
+                className={`font-mono text-[11px] uppercase tracking-widest ${
+                  reloadMsg.kind === "ok" ? "text-status-pass" : "text-status-fail"
+                }`}
+              >
+                {reloadMsg.text}
+              </span>
+            )}
+            <Button
+              variant="default"
+              size="sm"
+              onClick={handleReload}
+              disabled={reloading}
+              className="gap-2"
+            >
+              <RefreshCw className={reloading ? "animate-spin" : ""} />
+              {reloading ? "Reloading…" : "Reload Features"}
+            </Button>
+          </div>
         </div>
       </header>
+
 
       <main className="mx-auto max-w-7xl space-y-6 px-6 py-6">
         <SummaryStats features={features} />
