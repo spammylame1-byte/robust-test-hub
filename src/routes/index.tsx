@@ -116,6 +116,47 @@ function Dashboard() {
     }
   };
 
+  const runAll = useServerFn(runAllFn);
+  const [runningAll, setRunningAll] = useState(false);
+  const [runAllMsg, setRunAllMsg] = useState<{ kind: "ok" | "err"; text: string } | null>(null);
+  const markAllRunning = useRunsStore((s) => s.markAllRunning);
+  const setBulkResults = useRunsStore((s) => s.setBulkResults);
+
+  const handleRunAll = async () => {
+    setRunningAll(true);
+    setRunAllMsg(null);
+    const allIds = (features as Feature[]).flatMap((f) => f.scenarios.map((s) => scenarioId(s)));
+    markAllRunning(allIds);
+    try {
+      const res = await runAll();
+      const ranAt = Date.now();
+      const entries: Record<string, RunResult> = {};
+      let passes = 0;
+      let fails = 0;
+      for (const id of allIds) {
+        const r = res.results[id];
+        if (r) {
+          entries[id] = { ...r, ranAt };
+          if (r.status === "pass") passes++;
+          else fails++;
+        } else {
+          entries[id] = { status: "idle" };
+        }
+      }
+      setBulkResults(entries);
+      if (res.error) {
+        setRunAllMsg({ kind: "err", text: res.error });
+      } else {
+        setRunAllMsg({ kind: "ok", text: `Done · ${passes} pass · ${fails} fail` });
+      }
+    } catch (e) {
+      setRunAllMsg({ kind: "err", text: (e as Error).message });
+    } finally {
+      setRunningAll(false);
+      setTimeout(() => setRunAllMsg(null), 6000);
+    }
+  };
+
   return (
     <div className="min-h-screen bg-background">
       <header className="border-b border-border bg-card">
