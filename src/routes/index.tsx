@@ -173,6 +173,15 @@ function Dashboard() {
             </div>
           </div>
           <div className="flex items-center gap-3">
+            {runAllMsg && (
+              <span
+                className={`font-mono text-[11px] uppercase tracking-widest ${
+                  runAllMsg.kind === "ok" ? "text-status-pass" : "text-status-fail"
+                }`}
+              >
+                {runAllMsg.text}
+              </span>
+            )}
             {reloadMsg && (
               <span
                 className={`font-mono text-[11px] uppercase tracking-widest ${
@@ -184,9 +193,19 @@ function Dashboard() {
             )}
             <Button
               variant="default"
+              size="lg"
+              onClick={handleRunAll}
+              disabled={runningAll || reloading}
+              className="gap-2 bg-status-pass text-primary-foreground hover:bg-status-pass/90"
+            >
+              <PlayCircle className={runningAll ? "animate-pulse" : ""} />
+              {runningAll ? "Running all…" : "Run All"}
+            </Button>
+            <Button
+              variant="outline"
               size="sm"
               onClick={handleReload}
-              disabled={reloading}
+              disabled={reloading || runningAll}
               className="gap-2"
             >
               <RefreshCw className={reloading ? "animate-spin" : ""} />
