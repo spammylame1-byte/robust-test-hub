@@ -4,11 +4,13 @@ import { queryOptions, useSuspenseQuery, useQueryErrorResetBoundary, useQueryCli
 import { useEffect } from "react";
 import { useRouter } from "@tanstack/react-router";
 import { useServerFn } from "@tanstack/react-start";
-import { RefreshCw } from "lucide-react";
-import type { Feature } from "@/types/cucumber";
+import { RefreshCw, PlayCircle } from "lucide-react";
+import type { Feature, RunResult } from "@/types/cucumber";
 import { scenarioId } from "@/types/cucumber";
 import { fetchFeatures } from "@/lib/api";
 import { reloadFeaturesFn } from "@/lib/features.functions";
+import { runAllFn } from "@/lib/run.functions";
+import { useRunsStore } from "@/store/runs";
 import { Button } from "@/components/ui/button";
 import { SummaryStats } from "@/components/dashboard/SummaryStats";
 import { FeatureCard } from "@/components/dashboard/FeatureCard";
