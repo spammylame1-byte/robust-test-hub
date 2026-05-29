@@ -90,6 +90,30 @@ function Dashboard() {
     void navigate({ search: { scenario: id } as SearchParams });
   };
 
+  const reload = useServerFn(reloadFeaturesFn);
+  const queryClient = useQueryClient();
+  const [reloading, setReloading] = useState(false);
+  const [reloadMsg, setReloadMsg] = useState<{ kind: "ok" | "err"; text: string } | null>(null);
+
+  const handleReload = async () => {
+    setReloading(true);
+    setReloadMsg(null);
+    try {
+      const res = await reload();
+      if (res.ok) {
+        await queryClient.invalidateQueries({ queryKey: ["features"] });
+        setReloadMsg({ kind: "ok", text: `Reloaded · ${res.count} features` });
+      } else {
+        setReloadMsg({ kind: "err", text: res.error });
+      }
+    } catch (e) {
+      setReloadMsg({ kind: "err", text: (e as Error).message });
+    } finally {
+      setReloading(false);
+      setTimeout(() => setReloadMsg(null), 4000);
+    }
+  };
+
   return (
     <div className="min-h-screen bg-background">
       <header className="border-b border-border bg-card">
@@ -105,8 +129,30 @@ function Dashboard() {
               </p>
             </div>
           </div>
+          <div className="flex items-center gap-3">
+            {reloadMsg && (
+              <span
+                className={`font-mono text-[11px] uppercase tracking-widest ${
+                  reloadMsg.kind === "ok" ? "text-status-pass" : "text-status-fail"
+                }`}
+              >
+                {reloadMsg.text}
+              </span>
+            )}
+            <Button
+              variant="default"
+              size="sm"
+              onClick={handleReload}
+              disabled={reloading}
+              className="gap-2"
+            >
+              <RefreshCw className={reloading ? "animate-spin" : ""} />
+              {reloading ? "Reloading…" : "Reload Features"}
+            </Button>
+          </div>
         </div>
       </header>
+
 
       <main className="mx-auto max-w-7xl space-y-6 px-6 py-6">
         <SummaryStats features={features} />
