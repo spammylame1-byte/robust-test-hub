@@ -6,6 +6,8 @@ import { runScenario } from "@/lib/api";
 interface RunsState {
   results: Record<string, RunResult>;
   run: (scenario: Scenario, featureName: string) => Promise<void>;
+  setBulkResults: (entries: Record<string, RunResult>) => void;
+  markAllRunning: (ids: string[]) => void;
 }
 
 export const useRunsStore = create<RunsState>((set) => ({
@@ -29,4 +31,12 @@ export const useRunsStore = create<RunsState>((set) => ({
       }));
     }
   },
+  markAllRunning: (ids) =>
+    set((s) => {
+      const next = { ...s.results };
+      for (const id of ids) next[id] = { status: "running" };
+      return { results: next };
+    }),
+  setBulkResults: (entries) =>
+    set((s) => ({ results: { ...s.results, ...entries } })),
 }));

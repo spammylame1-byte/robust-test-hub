@@ -4,11 +4,13 @@ import { queryOptions, useSuspenseQuery, useQueryErrorResetBoundary, useQueryCli
 import { useEffect } from "react";
 import { useRouter } from "@tanstack/react-router";
 import { useServerFn } from "@tanstack/react-start";
-import { RefreshCw } from "lucide-react";
-import type { Feature } from "@/types/cucumber";
+import { RefreshCw, PlayCircle } from "lucide-react";
+import type { Feature, RunResult } from "@/types/cucumber";
 import { scenarioId } from "@/types/cucumber";
 import { fetchFeatures } from "@/lib/api";
 import { reloadFeaturesFn } from "@/lib/features.functions";
+import { runAllFn } from "@/lib/run.functions";
+import { useRunsStore } from "@/store/runs";
 import { Button } from "@/components/ui/button";
 import { SummaryStats } from "@/components/dashboard/SummaryStats";
 import { FeatureCard } from "@/components/dashboard/FeatureCard";
@@ -114,6 +116,47 @@ function Dashboard() {
     }
   };
 
+  const runAll = useServerFn(runAllFn);
+  const [runningAll, setRunningAll] = useState(false);
+  const [runAllMsg, setRunAllMsg] = useState<{ kind: "ok" | "err"; text: string } | null>(null);
+  const markAllRunning = useRunsStore((s) => s.markAllRunning);
+  const setBulkResults = useRunsStore((s) => s.setBulkResults);
+
+  const handleRunAll = async () => {
+    setRunningAll(true);
+    setRunAllMsg(null);
+    const allIds = (features as Feature[]).flatMap((f) => f.scenarios.map((s) => scenarioId(s)));
+    markAllRunning(allIds);
+    try {
+      const res = await runAll();
+      const ranAt = Date.now();
+      const entries: Record<string, RunResult> = {};
+      let passes = 0;
+      let fails = 0;
+      for (const id of allIds) {
+        const r = res.results[id];
+        if (r) {
+          entries[id] = { ...r, ranAt };
+          if (r.status === "pass") passes++;
+          else fails++;
+        } else {
+          entries[id] = { status: "idle" };
+        }
+      }
+      setBulkResults(entries);
+      if (res.error) {
+        setRunAllMsg({ kind: "err", text: res.error });
+      } else {
+        setRunAllMsg({ kind: "ok", text: `Done · ${passes} pass · ${fails} fail` });
+      }
+    } catch (e) {
+      setRunAllMsg({ kind: "err", text: (e as Error).message });
+    } finally {
+      setRunningAll(false);
+      setTimeout(() => setRunAllMsg(null), 6000);
+    }
+  };
+
   return (
     <div className="min-h-screen bg-background">
       <header className="border-b border-border bg-card">
@@ -130,6 +173,15 @@ function Dashboard() {
             </div>
           </div>
           <div className="flex items-center gap-3">
+            {runAllMsg && (
+              <span
+                className={`font-mono text-[11px] uppercase tracking-widest ${
+                  runAllMsg.kind === "ok" ? "text-status-pass" : "text-status-fail"
+                }`}
+              >
+                {runAllMsg.text}
+              </span>
+            )}
             {reloadMsg && (
               <span
                 className={`font-mono text-[11px] uppercase tracking-widest ${
@@ -141,9 +193,19 @@ function Dashboard() {
             )}
             <Button
               variant="default"
+              size="lg"
+              onClick={handleRunAll}
+              disabled={runningAll || reloading}
+              className="gap-2 bg-status-pass text-primary-foreground hover:bg-status-pass/90"
+            >
+              <PlayCircle className={runningAll ? "animate-pulse" : ""} />
+              {runningAll ? "Running all…" : "Run All"}
+            </Button>
+            <Button
+              variant="outline"
               size="sm"
               onClick={handleReload}
-              disabled={reloading}
+              disabled={reloading || runningAll}
               className="gap-2"
             >
               <RefreshCw className={reloading ? "animate-spin" : ""} />

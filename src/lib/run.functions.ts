@@ -126,3 +126,97 @@ export const runScenarioFn = createServerFn({ method: "POST" })
 
     return { status, durationMs, output, error: errorMsg };
   });
+
+export interface RunAllResponse {
+  ok: boolean;
+  exitCode: number;
+  output: string;
+  error?: string;
+  results: Record<string, { status: "pass" | "fail"; durationMs: number; output: string; error?: string }>;
+}
+
+export const runAllFn = createServerFn({ method: "POST" }).handler(
+  async (): Promise<RunAllResponse> => {
+    const { spawn } = await import("node:child_process");
+    const { readFile } = await import("node:fs/promises");
+    const { join, resolve } = await import("node:path");
+
+    const cwd = process.env.CUCUMBER_CWD
+      ? resolve(process.env.CUCUMBER_CWD)
+      : process.cwd();
+
+    const isWin = process.platform === "win32";
+    const child = spawn("npm", ["run", "fulltest"], { cwd, env: process.env, shell: isWin });
+
+    let stdout = "";
+    let stderr = "";
+    child.stdout?.on("data", (b) => (stdout += b.toString()));
+    child.stderr?.on("data", (b) => (stderr += b.toString()));
+
+    const exitCode: number = await new Promise((res) => {
+      child.on("close", (code) => res(code ?? 1));
+      child.on("error", () => res(1));
+    });
+
+    const output = (stdout + (stderr ? `\n${stderr}` : "")).trim();
+    const results: RunAllResponse["results"] = {};
+
+    const reportPath = process.env.CUCUMBER_REPORT_PATH
+      ? resolve(process.env.CUCUMBER_REPORT_PATH)
+      : join(cwd, "cucumber-report.json");
+
+    try {
+      const raw = await readFile(reportPath, "utf8");
+      const report = JSON.parse(raw) as Array<{
+        elements?: Array<{
+          name: string;
+          type: string;
+          tags?: Array<{ name: string }>;
+          steps?: Array<{
+            keyword: string;
+            name: string;
+            result?: { status: string; duration?: number; error_message?: string };
+          }>;
+        }>;
+      }>;
+
+      for (const feat of report) {
+        for (const el of feat.elements ?? []) {
+          if (el.type !== "scenario") continue;
+          const testIdTag = (el.tags ?? []).find((t) => /^@TestID_/i.test(t.name));
+          const key = testIdTag ? testIdTag.name : el.name;
+
+          let ns = 0;
+          let failed = false;
+          let errorMsg: string | undefined;
+          const lines: string[] = [];
+          for (const step of el.steps ?? []) {
+            const st = step.result?.status ?? "unknown";
+            ns += step.result?.duration ?? 0;
+            lines.push(`  ${st.padEnd(8)} ${step.keyword}${step.name}`);
+            if (st === "failed") {
+              failed = true;
+              if (!errorMsg && step.result?.error_message) errorMsg = step.result.error_message;
+            }
+          }
+          results[key] = {
+            status: failed ? "fail" : "pass",
+            durationMs: Math.round(ns / 1e6),
+            output: lines.join("\n"),
+            error: errorMsg,
+          };
+        }
+      }
+    } catch (e) {
+      return {
+        ok: exitCode === 0,
+        exitCode,
+        output,
+        error: `Could not read cucumber-report.json: ${(e as Error).message}`,
+        results,
+      };
+    }
+
+    return { ok: exitCode === 0, exitCode, output, results };
+  },
+);
