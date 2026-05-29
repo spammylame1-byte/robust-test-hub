@@ -1,11 +1,15 @@
 import { createFileRoute, useNavigate, useSearch } from "@tanstack/react-router";
-import { useMemo } from "react";
-import { queryOptions, useSuspenseQuery, useQueryErrorResetBoundary } from "@tanstack/react-query";
+import { useMemo, useState } from "react";
+import { queryOptions, useSuspenseQuery, useQueryErrorResetBoundary, useQueryClient } from "@tanstack/react-query";
 import { useEffect } from "react";
 import { useRouter } from "@tanstack/react-router";
+import { useServerFn } from "@tanstack/react-start";
+import { RefreshCw } from "lucide-react";
 import type { Feature } from "@/types/cucumber";
 import { scenarioId } from "@/types/cucumber";
 import { fetchFeatures } from "@/lib/api";
+import { reloadFeaturesFn } from "@/lib/features.functions";
+import { Button } from "@/components/ui/button";
 import { SummaryStats } from "@/components/dashboard/SummaryStats";
 import { FeatureCard } from "@/components/dashboard/FeatureCard";
 import { ScenarioDetailPanel } from "@/components/dashboard/ScenarioDetailPanel";
